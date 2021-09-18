@@ -82,10 +82,10 @@ struct Lt: AST {
 }
 
 struct Assign: AST {
-    var left: AST
-    var right: AST
+    var name: AST
+    var expression: AST
     func eval(_ env: inout [String : Val]) throws -> AST {
-        guard case let (l as Primitive, r as Primitive) = (left, try right.eval(&env)) else {
+        guard case let (l as Primitive, r as Primitive) = (name, try expression.eval(&env)) else {
             throw ASTError.type(self)
         }
         
@@ -144,15 +144,19 @@ public func ASTMain() throws {
     
     let p = Do(sequence: [
         // x = 2 + 5 * 12
-        Assign(left: Primitive(raw: .symbol("x")),
-               right: Add(left: Primitive(raw: .int(2)),
-                          right: Mul(left: Primitive(raw: .int(5)), right: Primitive(raw: .int(12))))),
+        Assign(name: Primitive(raw: .symbol("x")),
+               expression: Add(left: Primitive(raw: .int(2)),
+                               right: Mul(left: Primitive(raw: .int(5)),
+                                          right: Primitive(raw: .int(12))
+                               )
+               )
+        ),
         // while x < 65 {
         //     x = x + 1
         // }
         While(condition: Lt(left: Primitive(raw: .symbol("x")), right: Primitive(raw: .int(65))),
-              body: Assign(left: Primitive(raw: .symbol("x")),
-                           right: Add(left: Primitive(raw: .symbol("x")), right: Primitive(raw: .int(1)))
+              body: Assign(name: Primitive(raw: .symbol("x")),
+                           expression: Add(left: Primitive(raw: .symbol("x")), right: Primitive(raw: .int(1)))
               )
         ),
         Primitive.init(raw: .symbol("x"))
