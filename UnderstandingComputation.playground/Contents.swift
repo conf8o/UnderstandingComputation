@@ -1,4 +1,4 @@
 import Cocoa
 
 automatonMain()
-try astMain()
+try ASTMain()
