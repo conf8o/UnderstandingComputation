@@ -1,48 +1,72 @@
 import Foundation
 
-enum Val {
-    case int(Int)
-    case bool(Bool)
-    case symbol(String)
-    case unit
+protocol AST {
+    var reducible: Bool { get }
+    func reduce(_ env: inout [String : Any]) throws -> AST
+    func eval(_ env: inout [String: Any]) throws -> AST
 }
 
-protocol AST {
-    func eval(_ env: inout [String: Val]) throws -> AST
+protocol Primitive {}
+extension Primitive {
+    var reducible: Bool { false }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        self as! AST
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        self as! AST
+    }
 }
 
 enum ASTError: Error {
-    case type(AST)
+    case smallStep(AST)
+    case bigStep(AST)
 }
 
-struct Primitive: AST {
-    var raw: Val
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        switch raw {
-        case let .symbol(s):
-            guard let x = env[s] else {
-                throw ASTError.type(self)
-            }
-            return Primitive(raw: x)
-        default:
-            return self
+struct Integer: Primitive, AST { var raw: Int }
+struct Boolean: Primitive, AST { var raw: Bool }
+struct Unit: Primitive, AST {}
+
+struct Symbol: AST {
+    var raw: String
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        guard let s = env[raw] else {
+            throw ASTError.smallStep(self)
         }
+        return s as! AST
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        guard let s = env[raw] else {
+            throw ASTError.bigStep(self)
+        }
+        return s as! AST
     }
 }
 
 struct Add: AST {
     var left: AST
     var right: AST
-    func eval(_ env: inout [String: Val]) throws -> AST {
-        guard case let (l as Primitive, r as Primitive) = (try left.eval(&env), try right.eval(&env)) else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        if left.reducible {
+            return Add(left: try left.reduce(&env), right: right)
+        } else if right.reducible {
+            return Add(left: left, right: try right.reduce(&env))
+        } else {
+            switch (left, right) {
+            case let (l as Integer, r as Integer):
+                return Integer(raw: l.raw + r.raw)
+            default:
+                throw ASTError.smallStep(self)
+            }
         }
-        
-        switch (l.raw, r.raw) {
-        case let (.int(x), .int(y)):
-            return Primitive(raw: .int(x + y))
+    }
+    func eval(_ env: inout [String: Any]) throws -> AST {
+        switch (try left.eval(&env), try right.eval(&env)) {
+        case let (x as Integer, y as Integer):
+            return Integer(raw: x.raw + y.raw)
         default:
-            throw ASTError.type(self)
+            throw ASTError.bigStep(self)
         }
     }
 }
@@ -50,16 +74,27 @@ struct Add: AST {
 struct Mul: AST {
     var left: AST
     var right: AST
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        guard case let (l as Primitive, r as Primitive) = (try left.eval(&env), try right.eval(&env)) else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        if left.reducible {
+            return Mul(left: try left.reduce(&env), right: right)
+        } else if right.reducible {
+            return Mul(left: left, right: try right.reduce(&env))
+        } else {
+            switch (left, right) {
+            case let (l as Integer, r as Integer):
+                return Integer(raw: l.raw * r.raw)
+            default:
+                throw ASTError.smallStep(self)
+            }
         }
-        
-        switch (l.raw, r.raw) {
-        case let (.int(x), .int(y)):
-            return Primitive(raw: .int(x * y))
+    }
+    func eval(_ env: inout [String: Any]) throws -> AST {
+        switch (try left.eval(&env), try right.eval(&env)) {
+        case let (x as Integer, y as Integer):
+            return Integer(raw: x.raw * y.raw)
         default:
-            throw ASTError.type(self)
+            throw ASTError.bigStep(self)
         }
     }
 }
@@ -67,16 +102,27 @@ struct Mul: AST {
 struct Lt: AST {
     var left: AST
     var right: AST
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        guard case let (l as Primitive, r as Primitive) = (try left.eval(&env), try right.eval(&env)) else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        if left.reducible {
+            return Lt(left: try left.reduce(&env), right: right)
+        } else if right.reducible {
+            return Lt(left: left, right: try right.reduce(&env))
+        } else {
+            switch (left, right) {
+            case let (l as Integer, r as Integer):
+                return Boolean(raw: l.raw < r.raw)
+            default:
+                throw ASTError.smallStep(self)
+            }
         }
-        
-        switch (l.raw, r.raw) {
-        case let (.int(x), .int(y)):
-            return Primitive(raw: .bool(x < y))
+    }
+    func eval(_ env: inout [String: Any]) throws -> AST {
+        switch (try left.eval(&env), try right.eval(&env)) {
+        case let (x as Integer, y as Integer):
+            return Boolean(raw: x.raw < y.raw)
         default:
-            throw ASTError.type(self)
+            throw ASTError.bigStep(self)
         }
     }
 }
@@ -84,17 +130,26 @@ struct Lt: AST {
 struct Assign: AST {
     var name: AST
     var expression: AST
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        guard case let (l as Primitive, r as Primitive) = (name, try expression.eval(&env)) else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        guard case let s as Symbol = name else {
+            throw ASTError.smallStep(self)
+        }
+        if expression.reducible {
+            return Assign(name: s, expression: try expression.reduce(&env))
+        } else {
+            env[s.raw] = expression
+            return Unit()
         }
         
-        switch (l.raw, r.raw) {
-        case let (.symbol(label), val):
-            env[label] = val
-            return Primitive(raw: .unit)
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        switch (name, try expression.eval(&env)){
+        case let (label as Symbol, val):
+            env[label.raw] = val
+            return Unit()
         default:
-            throw ASTError.type(self)
+            throw ASTError.bigStep(self)
         }
     }
 }
@@ -103,63 +158,106 @@ struct If: AST {
     var condition: AST
     var consequence: AST
     var alternative: AST
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        guard case let p as Primitive = try condition.eval(&env) else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        if condition.reducible {
+            return If(condition: try condition.reduce(&env), consequence: consequence, alternative: alternative)
+        } else {
+            switch condition {
+            case let (p as Boolean):
+                return p.raw ? consequence : alternative
+            default:
+                throw ASTError.smallStep(self)
+            }
+        }
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        guard case let p as Boolean = try condition.eval(&env) else {
+            throw ASTError.bigStep(self)
         }
         
-        guard case let .bool(p) = p.raw else {
-            throw ASTError.type(self)
-        }
-        
-        return try p ? consequence.eval(&env) : alternative.eval(&env)
+        return try p.raw ? consequence.eval(&env) : alternative.eval(&env)
     }
 }
 
 struct Do: AST {
     var sequence: [AST]
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        var seq = sequence.makeIterator()
-        guard let ast = seq.next() else {
-            throw ASTError.type(self)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        if sequence.count == 0 {
+            return Unit()
         }
-        var a = try ast.eval(&env)
-        for ast in seq {
-            a = try ast.eval(&env)
+        else if sequence.first! is Unit {
+            return Do(sequence: Array(sequence.dropFirst()))
+        } else {
+            var _seq = sequence
+            let a = try _seq.removeFirst().eval(&env)
+            _seq.insert(a, at: 0)
+            return Do(sequence: _seq)
         }
-        return try a.eval(&env)
+        
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        for ast in sequence {
+            let _ = try ast.eval(&env)
+        }
+        return Unit()
     }
 }
 
 struct While: AST {
     var condition: AST
     var body: AST
-    func eval(_ env: inout [String : Val]) throws -> AST {
-        return try If(condition: condition, consequence: Do(sequence: [body, self]), alternative: Primitive(raw: .unit)).eval(&env)
+    var reducible: Bool { true }
+    func reduce(_ env: inout [String : Any]) throws -> AST {
+        return If(condition: condition, consequence: Do(sequence: [body, self]), alternative: Unit())
+    }
+    func eval(_ env: inout [String : Any]) throws -> AST {
+        return try If(condition: condition, consequence: Do(sequence: [body, self]), alternative: Unit()).eval(&env)
     }
 }
 
+struct SmallStepMachine {
+    var expression: AST
+    mutating func step(_ env: inout [String: Any]) throws {
+        expression = try expression.reduce(&env)
+    }
+    mutating func run(_ env: inout [String: Any]) throws {
+        while expression.reducible {
+            print(expression)
+            try step(&env)
+        }
+        print(expression)
+    }
+}
 public func ASTMain() throws {
-    var env = [String: Val]()
+    var env = [String: Any]()
     
-    let p = Do(sequence: [
+    let ast = Do(sequence: [
         // x = 2 + 5 * 12
-        Assign(name: Primitive(raw: .symbol("x")),
-               expression: Add(left: Primitive(raw: .int(2)),
-                               right: Mul(left: Primitive(raw: .int(5)),
-                                          right: Primitive(raw: .int(12))
-                               )
+        Assign(name: Symbol(raw: "x"),
+               expression: Add(left: Integer(raw: 2),
+                               right: Mul(left: Integer(raw: 5),
+                                          right: Integer(raw: 12))
                )
         ),
         // while x < 65 {
         //     x = x + 1
         // }
-        While(condition: Lt(left: Primitive(raw: .symbol("x")), right: Primitive(raw: .int(65))),
-              body: Assign(name: Primitive(raw: .symbol("x")),
-                           expression: Add(left: Primitive(raw: .symbol("x")), right: Primitive(raw: .int(1)))
+        While(condition: Lt(left: Symbol(raw: "x"), right: Integer(raw: 100)),
+              body: Assign(name: Symbol(raw: "x"),
+                           expression: Add(left: Symbol(raw: "x"), right: Integer(raw: 1))
               )
-        ),
-        Primitive.init(raw: .symbol("x"))
+        )
     ])
-    print(try p.eval(&env))
+    
+    
+    // スモールステップ
+    var machine = SmallStepMachine(expression: ast)
+    try machine.run(&env)
+    print(env)
+    
+    // ビッグステップ
+    let _ = try ast.eval(&env)
+    print(env)
 }
