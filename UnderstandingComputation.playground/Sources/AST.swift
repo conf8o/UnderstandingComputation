@@ -241,7 +241,7 @@ public func ASTMain() throws {
                                           right: Integer(raw: 12))
                )
         ),
-        // while x < 65 {
+        // while x < 100 {
         //     x = x + 1
         // }
         While(condition: Lt(left: Symbol(raw: "x"), right: Integer(raw: 100)),
