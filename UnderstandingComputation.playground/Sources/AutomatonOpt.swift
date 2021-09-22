@@ -16,7 +16,7 @@ struct FARule {
 struct DFARulebook {
     var mapping: [String: State]
     init(_ rules: [FARule]) {
-        mapping = Dictionary(uniqueKeysWithValues: rules.map { rule in (rule.input.description, rule.output)})
+        mapping = Dictionary(uniqueKeysWithValues: rules.map { rule in (rule.input.description, rule.output) })
     }
     func nextState(input: FARuleInput) -> State? {
         mapping[input.description]
@@ -24,8 +24,8 @@ struct DFARulebook {
 }
 
 infix operator ~: AdditionPrecedence
-func ~ (s1: State, char: Character) -> FARuleInput {
-    FARuleInput(state: s1, char: char)
+func ~ (state: State, char: Character) -> FARuleInput {
+    FARuleInput(state: state, char: char)
 }
 
 infix operator ~>: AdditionPrecedence
@@ -55,5 +55,4 @@ public func automatonMain() {
     
     print(s)
 }
-
 
