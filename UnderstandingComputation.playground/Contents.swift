@@ -1,4 +1,4 @@
 import Cocoa
 
-//automatonMain()
-try ASTMain()
+dfaMain()
+//try ASTMain()
