@@ -4,9 +4,13 @@ protocol AST {
     var reducible: Bool { get }
     func reduce(_ env: inout [String : Any]) throws -> AST
     func eval(_ env: inout [String: Any]) throws -> AST
+    func toJS() -> String
 }
 
-protocol Primitive {}
+protocol Primitive {
+    associatedtype Raw
+    var raw: Raw { get }
+}
 extension Primitive {
     var reducible: Bool { false }
     func reduce(_ env: inout [String : Any]) throws -> AST {
@@ -14,6 +18,9 @@ extension Primitive {
     }
     func eval(_ env: inout [String : Any]) throws -> AST {
         self as! AST
+    }
+    func toJS() -> String {
+        "(e => \(self.raw))"
     }
 }
 
@@ -24,7 +31,7 @@ enum ASTError: Error {
 
 struct Integer: Primitive, AST { var raw: Int }
 struct Boolean: Primitive, AST { var raw: Bool }
-struct Unit: Primitive, AST {}
+struct Unit: Primitive, AST { var raw: () }
 
 struct Symbol: AST {
     var raw: String
@@ -40,6 +47,9 @@ struct Symbol: AST {
             throw ASTError.bigStep(self)
         }
         return s as! AST
+    }
+    func toJS() -> String {
+        "(e => e.\(self.raw))"
     }
 }
 
@@ -69,6 +79,9 @@ struct Add: AST {
             throw ASTError.bigStep(self)
         }
     }
+    func toJS() -> String {
+        "(e => \(self.left.toJS())(e) + \(self.right.toJS())(e))"
+    }
 }
 
 struct Mul: AST {
@@ -96,6 +109,10 @@ struct Mul: AST {
         default:
             throw ASTError.bigStep(self)
         }
+    }
+
+    func toJS() -> String {
+        "(e => \(self.left.toJS())(e) * \(self.right.toJS())(e))"
     }
 }
 
@@ -125,6 +142,9 @@ struct Lt: AST {
             throw ASTError.bigStep(self)
         }
     }
+    func toJS() -> String {
+        "(e => \(self.left.toJS())(e) < \(self.right.toJS())(e))"
+    }
 }
 
 struct Assign: AST {
@@ -152,6 +172,9 @@ struct Assign: AST {
             throw ASTError.bigStep(self)
         }
     }
+    func toJS() -> String {
+        "(e => { e.\((name as! Symbol).raw) = \(expression.toJS())(e) })"
+    }
 }
 
 struct If: AST {
@@ -178,6 +201,9 @@ struct If: AST {
         
         return try p.raw ? consequence.eval(&env) : alternative.eval(&env)
     }
+    func toJS() -> String {
+        "(e => \(condition)(e) ? \(consequence)(e) : \(alternative)(e))"
+    }
 }
 
 struct Do: AST {
@@ -195,13 +221,15 @@ struct Do: AST {
             _seq.insert(a, at: 0)
             return Do(sequence: _seq)
         }
-        
     }
     func eval(_ env: inout [String : Any]) throws -> AST {
         for ast in sequence {
             let _ = try ast.eval(&env)
         }
         return Unit()
+    }
+    func toJS() -> String {
+        "(e => { \(sequence.map { "\($0.toJS())(e)" }.joined(separator: ";")) })"
     }
 }
 
@@ -214,6 +242,9 @@ struct While: AST {
     }
     func eval(_ env: inout [String : Any]) throws -> AST {
         return try If(condition: condition, consequence: Do(sequence: [body, self]), alternative: Unit()).eval(&env)
+    }
+    func toJS() -> String {
+        "(e => { while (\(condition.toJS())(e)) { \(body.toJS())(e) } })"
     }
 }
 
@@ -252,12 +283,16 @@ public func ASTMain() throws {
     ])
     
     
-    // スモールステップ
+    // 操作的意味論 スモールステップ
     var machine = SmallStepMachine(expression: ast)
     try machine.run(&env)
     print(env)
     
-    // ビッグステップ
+    // 操作的意味論 ビッグステップ
     let _ = try ast.eval(&env)
     print(env)
+
+    // 表示的意味論
+    let js = ast.toJS()
+    print(js)
 }
