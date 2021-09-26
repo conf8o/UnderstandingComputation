@@ -11,6 +11,7 @@ protocol Primitive {
     associatedtype Raw
     var raw: Raw { get }
 }
+
 extension Primitive {
     var reducible: Bool { false }
     func reduce(_ env: inout [String : Any]) throws -> AST {
@@ -33,7 +34,7 @@ struct Integer: Primitive, AST { var raw: Int }
 struct Boolean: Primitive, AST { var raw: Bool }
 struct Unit: Primitive, AST { var raw: () }
 
-struct Symbol: AST {
+struct Variable: AST {
     var raw: String
     var reducible: Bool { true }
     func reduce(_ env: inout [String : Any]) throws -> AST {
@@ -152,7 +153,7 @@ struct Assign: AST {
     var expression: AST
     var reducible: Bool { true }
     func reduce(_ env: inout [String : Any]) throws -> AST {
-        guard case let s as Symbol = name else {
+        guard case let s as Variable = name else {
             throw ASTError.smallStep(self)
         }
         if expression.reducible {
@@ -165,7 +166,7 @@ struct Assign: AST {
     }
     func eval(_ env: inout [String : Any]) throws -> AST {
         switch (name, try expression.eval(&env)){
-        case let (label as Symbol, val):
+        case let (label as Variable, val):
             env[label.raw] = val
             return Unit()
         default:
@@ -173,7 +174,7 @@ struct Assign: AST {
         }
     }
     func toJS() -> String {
-        "(e => { e.\((name as! Symbol).raw) = \(expression.toJS())(e) })"
+        "(e => { e.\((name as! Variable).raw) = \(expression.toJS())(e) })"
     }
 }
 
@@ -266,7 +267,7 @@ public func ASTMain() throws {
     
     let ast = Do(sequence: [
         // x = 2 + 5 * 12
-        Assign(name: Symbol(raw: "x"),
+        Assign(name: Variable(raw: "x"),
                expression: Add(left: Integer(raw: 2),
                                right: Mul(left: Integer(raw: 5),
                                           right: Integer(raw: 12))
@@ -275,9 +276,9 @@ public func ASTMain() throws {
         // while x < 100 {
         //     x = x + 1
         // }
-        While(condition: Lt(left: Symbol(raw: "x"), right: Integer(raw: 100)),
-              body: Assign(name: Symbol(raw: "x"),
-                           expression: Add(left: Symbol(raw: "x"), right: Integer(raw: 1))
+        While(condition: Lt(left: Variable(raw: "x"), right: Integer(raw: 100)),
+              body: Assign(name: Variable(raw: "x"),
+                           expression: Add(left: Variable(raw: "x"), right: Integer(raw: 1))
               )
         )
     ])
