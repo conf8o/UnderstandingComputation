@@ -1,6 +1,14 @@
 import Foundation
 
 typealias State = (Int)
+var globalStateCount = 0
+extension State {
+    static var new: State {
+        let x = globalStateCount
+        globalStateCount += 1
+        return x
+    }
+}
 
 enum Symbol: ExpressibleByStringLiteral {
     case symbol(Character)
@@ -44,6 +52,9 @@ struct DFATransitionMap {
         }
         
         return output
+    }
+    subscript(state: State, symbol: Symbol) -> State {
+        nextState(state: state, symbol: symbol)
     }
 }
 
@@ -101,6 +112,11 @@ struct NFATransitionMap {
 
         return Set(nexts)
     }
+    
+    subscript(states: Set<State>, symbol: Symbol) -> Set<State> {
+        nextStates(states: states, symbol: symbol)
+    }
+    
     func followFreeMoves(states: Set<State>) -> Set<State> {
         let moreStates = nextStates(states: states, symbol: .free)
         return moreStates.isSubset(of: states) ? states : followFreeMoves(states: moreStates)
@@ -108,12 +124,12 @@ struct NFATransitionMap {
 }
 
 struct NFA {
-    var _currentStates: Set<State>
+    var movingStates: Set<State>
     var acceptStates: Set<State>
     var transMap: NFATransitionMap
     
     var currentStates: Set<State> {
-        transMap.followFreeMoves(states: _currentStates)
+        transMap.followFreeMoves(states: movingStates).union(movingStates)
     }
     
     var accepting: Bool {
@@ -121,7 +137,7 @@ struct NFA {
     }
     
     mutating func readSymbol(symbol: Symbol) {
-        _currentStates = transMap.nextStates(states: currentStates, symbol: symbol)
+        movingStates = transMap.nextStates(states: currentStates, symbol: symbol)
     }
     
     mutating func readSymbols(str: String) {
@@ -137,7 +153,7 @@ struct NFADesign {
     var transMap: NFATransitionMap
     
     func newNFA() -> NFA {
-        NFA(_currentStates: [startState], acceptStates: acceptStates, transMap: transMap)
+        NFA(movingStates: [startState], acceptStates: acceptStates, transMap: transMap)
     }
     
     func canAccept(str: String) -> Bool {
