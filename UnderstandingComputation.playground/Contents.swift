@@ -1,6 +1,6 @@
 import Cocoa
 
-dfaMain()
-nfaMain()
-nfaFreeMoveMain()
-//try ASTMain()
+//dfaMain()
+//nfaMain()
+//nfaFreeMoveMain()
+patternMain()
