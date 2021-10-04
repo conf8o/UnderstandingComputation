@@ -1,12 +1,30 @@
 import Foundation
 
-typealias State = (Int)
+struct State {
+    var raw: Int
+    init(_ raw: Int) {
+        self.raw = raw
+    }
+}
+
+extension State: ExpressibleByIntegerLiteral {
+    init(integerLiteral: IntegerLiteralType) {
+        raw = integerLiteral
+    }
+}
+
+extension State: Hashable {
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(raw)
+    }
+}
+
 var globalStateCount = 0
 extension State {
     static var new: State {
         let x = globalStateCount
         globalStateCount += 1
-        return x
+        return State(x)
     }
 }
 
@@ -42,8 +60,11 @@ func ~> (input: FATransitionInput, output: State) -> FATransition {
 
 struct DFATransitionMap {
     var mapping: [String: State]
-    init(_ rules: [FATransition]) {
-        mapping = Dictionary(uniqueKeysWithValues: rules.map { rule in (rule.input.description, rule.output) })
+    init (_ mapping: [String: State]) {
+        self.mapping = mapping
+    }
+    init(transitions: [FATransition]) {
+        mapping = Dictionary(uniqueKeysWithValues: transitions.map { transition in (transition.input.description, transition.output) })
     }
     func nextState(state: State, symbol: Symbol) -> State {
         let input = FATransitionInput(state: state, symbol: symbol)
@@ -96,9 +117,13 @@ struct DFADesign {
 
 struct NFATransitionMap {
     var mapping: [String: Set<State>]
-    init(_ rules: [FATransition]) {
-        mapping = Dictionary(grouping: rules, by: { rule in rule.input.description })
-            .mapValues { rules in Set(rules.map { $0.output }) }
+    init (_ mapping: [String: Set<State>]) {
+        self.mapping = mapping
+    }
+    
+    init(transitions: [FATransition]) {
+        mapping = Dictionary(grouping: transitions, by: { transition in transition.input.description })
+            .mapValues { transitions in Set(transitions.map { $0.output }) }
     }
     
     func nextStates(states: Set<State>, symbol: Symbol) -> Set<State> {
@@ -120,6 +145,9 @@ struct NFATransitionMap {
     func followFreeMoves(states: Set<State>) -> Set<State> {
         let moreStates = nextStates(states: states, symbol: .free)
         return moreStates.isSubset(of: states) ? states : followFreeMoves(states: moreStates)
+    }
+    func merging(_ other: NFATransitionMap) -> NFATransitionMap {
+        NFATransitionMap(mapping.merging(other.mapping) { (x, _) in x })
     }
 }
 
@@ -165,11 +193,13 @@ struct NFADesign {
 }
 
 public func dfaMain() {
-    let transMap = DFATransitionMap([
-        1~"a"~>2, 1~"b"~>1,
-        2~"a"~>2, 2~"b"~>3,
-        3~"a"~>3, 3~"b"~>3
-    ])
+    let transMap = DFATransitionMap(
+        transitions: [
+            1~"a"~>2, 1~"b"~>1,
+            2~"a"~>2, 2~"b"~>3,
+            3~"a"~>3, 3~"b"~>3
+        ]
+    )
     let s = DFADesign(startState: 1, acceptStates: [1, 3], transMap: transMap)
     print(
         s.canAccept(str: "ab"),
@@ -180,11 +210,13 @@ public func dfaMain() {
 }
 
 public func nfaMain() {
-    let transMap = NFATransitionMap([
-        1~"a"~>1, 1~"b"~>1, 1~"b"~>2,
-        2~"a"~>3, 2~"b"~>3,
-        3~"a"~>4, 3~"b"~>4
-    ])
+    let transMap = NFATransitionMap(
+        transitions: [
+            1~"a"~>1, 1~"b"~>1, 1~"b"~>2,
+            2~"a"~>3, 2~"b"~>3,
+            3~"a"~>4, 3~"b"~>4
+        ]
+    )
     
     let s = NFADesign(startState: 1, acceptStates: [4], transMap: transMap)
 
@@ -196,14 +228,16 @@ public func nfaMain() {
 }
 
 public func nfaFreeMoveMain() {
-    let transMap = NFATransitionMap([
-        1~Symbol.free~>2, 1~Symbol.free~>4,
-        2~"a"~>3,
-        3~"a"~>2,
-        4~"a"~>5,
-        5~"a"~>6,
-        6~"a"~>4
-    ])
+    let transMap = NFATransitionMap(
+        transitions: [
+            1~Symbol.free~>2, 1~Symbol.free~>4,
+            2~"a"~>3,
+            3~"a"~>2,
+            4~"a"~>5,
+            5~"a"~>6,
+            6~"a"~>4
+        ]
+    )
     
     let s = NFADesign(startState: 1, acceptStates: [2, 4], transMap: transMap)
     
